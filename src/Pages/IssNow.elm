@@ -3,6 +3,7 @@ module Pages.IssNow exposing (..)
 import Http
 import Json.Decode as Json
 import Html exposing (Html, div, a, text, button, p)
+import Types exposing (PageLoadingStatus(..))
 
 
 --------------------------------------------------------------------------------
@@ -11,8 +12,8 @@ import Html exposing (Html, div, a, text, button, p)
 
 
 type alias Model =
-    { timestamp : Int
-    , location : Location
+    { maybeLocation : Maybe Location
+    , loadingStatus : PageLoadingStatus
     }
 
 
@@ -22,15 +23,64 @@ type alias Location =
     }
 
 
+initModel : Model
+initModel =
+    { maybeLocation = Nothing
+    , loadingStatus = Loading
+    }
+
+
+initCmd : Cmd Msg
+initCmd =
+    sendRequest
+
+
+getLoadingStatus : Model -> PageLoadingStatus
+getLoadingStatus model =
+    model.loadingStatus
+
+
+
+--------------------------------------------------------------------------------
+-- Update
+--------------------------------------------------------------------------------
+
+
+type Msg
+    = DataFetched (Result Http.Error Location)
+
+
+update : Msg -> Model -> Model
+update msg model =
+    case msg of
+        DataFetched result ->
+            case result of
+                Ok people ->
+                    { model | maybeLocation = Just people, loadingStatus = Loaded }
+
+                Err err ->
+                    { model | loadingStatus = DataFetchError <| toString err }
+
+
+navigateTo : Model -> ( Model, Cmd Msg )
+navigateTo model =
+    { model | loadingStatus = Loading } ! [ sendRequest ]
+
+
+reload : Model -> ( Model, Cmd Msg )
+reload model =
+    { model | loadingStatus = Reloading } ! [ sendRequest ]
+
+
 
 --------------------------------------------------------------------------------
 -- View
 --------------------------------------------------------------------------------
 
 
-view : Maybe Model -> Html msg
-view maybeModel =
-    case maybeModel of
+view : Model -> Html msg
+view model =
+    case model.maybeLocation of
         Just model ->
             div []
                 [ text <| toString model ]
@@ -63,19 +113,14 @@ internationalSpaceStationNowUrl =
 -- }
 
 
-request : Http.Request Model
+request : Http.Request Location
 request =
-    Http.get internationalSpaceStationNowUrl decoder
+    Http.get internationalSpaceStationNowUrl locationDecoder
 
 
-sendRequest : (Result Http.Error Model -> msg) -> Cmd msg
-sendRequest tagger =
-    Http.send tagger request
-
-
-decoder : Json.Decoder Model
-decoder =
-    Json.map2 Model timestampDecoder locationDecoder
+sendRequest : Cmd Msg
+sendRequest =
+    Http.send DataFetched request
 
 
 timestampDecoder : Json.Decoder Int

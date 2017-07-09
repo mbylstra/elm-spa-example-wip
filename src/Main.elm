@@ -3,12 +3,16 @@ module Main exposing (..)
 import AddressBar exposing (getUrl, parseLocation)
 import Html exposing (Html, a, button, div, p, text)
 import Html.Events exposing (onClick)
-import Http
 import Navigation exposing (newUrl)
 import Pages.IssNow as IssNow
 import Pages.PeopleInSpace as PeopleInSpace
 import Taco exposing (Taco)
-import Types exposing (Page(..), PageStatus(..))
+
+
+-- import Types exposing (Page(..), PageStatus(..))
+
+import Types exposing (Page(..))
+import LoadingStatusBar
 
 
 -- Notes: should the remote data stuff really be inside each one of the models?
@@ -49,7 +53,7 @@ type alias Model =
     { taco : Taco -- every SPA needs a taco. Yum!
 
     -- page state
-    , maybeIssNowPageData : Maybe IssNow.Model
+    , issNow : IssNow.Model
     , peopleInSpace : PeopleInSpace.Model
 
     -- top level "private" fields -- Don't pay too much attention to these yet! Pages should not need to know about them.
@@ -58,18 +62,42 @@ type alias Model =
     }
 
 
+
+-- TODO: figure out how to get the initial message
+-- To begin with we need an init function just to get the model into a state that
+-- will compile.
+-- And perhaps "activate" the page? But only call that on the active page?
+
+
 init : Navigation.Location -> ( Model, Cmd Msg )
 init location =
-    { taco = Taco.init location
+    let
+        taco =
+            Taco.init location
 
-    -- page state
-    , maybeIssNowPageData = Nothing
-    , peopleInSpace = PeopleInSpace.init
+        model =
+            { taco = taco
 
-    -- top level "private" fields
-    , linkClicked = False
-    }
-        ! [ IssNow.sendRequest IssDataFetched ]
+            -- page state
+            , issNow = IssNow.initModel
+            , peopleInSpace = PeopleInSpace.initModel
+
+            -- top level "private" fields
+            , linkClicked = False
+            }
+
+        cmd =
+            case taco.currentPage of
+                PeopleInSpacePage ->
+                    Cmd.map PeopleInSpaceMsg PeopleInSpace.initCmd
+
+                IssNowPage ->
+                    Cmd.map IssNowMsg IssNow.initCmd
+
+                NotFound ->
+                    Cmd.none
+    in
+        model ! [ cmd ]
 
 
 
@@ -81,8 +109,8 @@ init location =
 type Msg
     = UrlChanged Navigation.Location
     | RouteChangeRequested Page
-    | IssDataFetched (Result Http.Error IssNow.Model)
-    | PeopleInSpaceDataFetched (Result Http.Error PeopleInSpace.People)
+    | PeopleInSpaceMsg PeopleInSpace.Msg
+    | IssNowMsg IssNow.Msg
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -95,88 +123,87 @@ update msg model =
                 -- for informational and bookmarking purposes. (It is not the source of truth for state)
                 { model | linkClicked = False } ! []
             else
-                -- cmds =
-                --     case page of
-                --         -- PassoverPage ->
-                --         --     [ sendPassoverRequest ]
-                --         PeopleInSpacePage ->
-                --             []
-                --
-                --         IssNowPage ->
-                --             []
-                --
-                --         NotFound ->
-                --             []
-                -- We don't care!
-                -- Do we need to re-initialise the model then? And refetch stuff
-                -- we need to refetch? This doesn't seem right.
-                -- This is a bit of a manual process really.
+                -- Seeing as we are using HTML5 history for clean urls, and we know that
+                -- a link wasn't clicked, we can deduce that the back or forward button
+                -- was clicked. How do we get the state? Seeing as the Elm Navigation does
+                -- not support serializing state when calling pushState (it should, but it doesn't)
+                -- and we haven't implementation our own custom history API in elm (this would be possible),
+                -- all we have to work with is the URL and to deduce as much state as we
+                -- can from the URL. Depending on how much state we choose to store
+                -- in the url we may not be able to bring the page to exactly the
+                -- same state the page was in.
                 (model
                     |> updatePage (parseLocation location)
                     |> setLinkClicked False
                 )
                     ! []
 
-        -- model ! []
         RouteChangeRequested page ->
             let
                 newUrlCmd =
                     newUrl (getUrl page)
 
-                dataFetchCmd =
+                reloading =
+                    page == model.taco.currentPage
+
+                ( model2, cmd ) =
                     case page of
-                        -- PassoverPage ->
-                        --     [ sendPassoverRequest ]
                         PeopleInSpacePage ->
-                            PeopleInSpace.sendRequest PeopleInSpaceDataFetched
+                            let
+                                f =
+                                    if reloading then
+                                        PeopleInSpace.reload
+                                    else
+                                        PeopleInSpace.navigateTo
+
+                                ( newPeopleInSpace, pisMsg ) =
+                                    f model.peopleInSpace
+                            in
+                                { model | peopleInSpace = newPeopleInSpace } ! [ Cmd.map PeopleInSpaceMsg pisMsg ]
 
                         IssNowPage ->
-                            IssNow.sendRequest IssDataFetched
+                            let
+                                f =
+                                    if reloading then
+                                        IssNow.reload
+                                    else
+                                        IssNow.navigateTo
+
+                                ( newIssNow, issNowMsg ) =
+                                    f model.issNow
+                            in
+                                { model | issNow = newIssNow } ! [ Cmd.map IssNowMsg issNowMsg ]
 
                         NotFound ->
-                            Cmd.none
-
-                taco =
-                    model.taco
+                            model ! [ Cmd.none ]
             in
-                (model
+                (model2
                     |> updatePage page
                     |> setLinkClicked True
                 )
-                    ! [ newUrlCmd, dataFetchCmd ]
+                    ! [ newUrlCmd, cmd ]
 
-        IssDataFetched result ->
-            case result of
-                Ok data ->
-                    (model
-                        |> setPageStatus Loaded
-                        |> setMaybeIssNowPageData (Just data)
-                    )
-                        ! []
+        PeopleInSpaceMsg pisMsg ->
+            { model | peopleInSpace = PeopleInSpace.update pisMsg model.peopleInSpace } ! []
 
-                Err httpError ->
-                    (model
-                        |> setPageStatus (DataFetchError <| toString httpError)
-                    )
-                        ! []
-
-        PeopleInSpaceDataFetched result ->
-            case result of
-                Ok peopleData ->
-                    (model
-                        |> setPageStatus Loaded
-                        |> setPeopleInSpacePeople peopleData
-                    )
-                        ! []
-
-                Err httpError ->
-                    (model
-                        |> setPageStatus (DataFetchError <| toString httpError)
-                    )
-                        ! []
+        IssNowMsg issNowMsg ->
+            { model | issNow = IssNow.update issNowMsg model.issNow } ! []
 
 
 
+-- case result of
+--     Ok peopleData ->
+--         (model
+--             |> setPageStatus Loaded
+--             |> setPeopleInSpacePeople peopleData
+--         )
+--             ! []
+--
+--     Err httpError ->
+--         (model
+--             |> setPageStatus (DataFetchError <| toString httpError)
+--         )
+--             ! []
 -- case result of
 --     Ok peopleData ->
 --         let
@@ -202,7 +229,8 @@ view : Model -> Html Msg
 view model =
     div
         []
-        [ statusBar model.taco.pageStatus
+        -- [ statusBar model.taco.pageStatus
+        [ loadingBar model
         , topNav
         , pageView model
 
@@ -218,36 +246,50 @@ topNav =
         ]
 
 
-statusBar : PageStatus -> Html Msg
-statusBar pageStatus =
-    case pageStatus of
-        LoadingFirstPage ->
-            div []
-                [ text "loading first page"
-                ]
+loadingBar : Model -> Html Msg
+loadingBar model =
+    case model.taco.currentPage of
+        PeopleInSpacePage ->
+            LoadingStatusBar.view PeopleInSpace.getLoadingStatus model.peopleInSpace
 
-        -- can we pass the view and the data, and choose whether to pass in the
-        -- data or just nothing?
-        LoadingNextPageData ->
-            div []
-                [ text "loading new page"
-                ]
+        IssNowPage ->
+            LoadingStatusBar.view IssNow.getLoadingStatus model.issNow
 
-        Reloading ->
-            div []
-                [ text "reloading"
-                ]
+        NotFound ->
+            text "Not Found"
 
-        -- Transitioning ->
-        --     div []
-        --         []
-        Loaded ->
-            div []
-                []
 
-        DataFetchError error ->
-            div []
-                [ text <| toString error ]
+
+-- statusBar : PageStatus -> Html Msg
+-- statusBar pageStatus =
+--     case pageStatus of
+--         LoadingFirstPage ->
+--             div []
+--                 [ text "loading first page"
+--                 ]
+--
+--         -- can we pass the view and the data, and choose whether to pass in the
+--         -- data or just nothing?
+--         LoadingNextPageData ->
+--             div []
+--                 [ text "loading new page"
+--                 ]
+--
+--         Reloading ->
+--             div []
+--                 [ text "reloading"
+--                 ]
+--
+--         -- Transitioning ->
+--         --     div []
+--         --         []
+--         Loaded ->
+--             div []
+--                 []
+--
+--         DataFetchError error ->
+--             div []
+--                 [ text <| toString error ]
 
 
 pageView : Model -> Html Msg
@@ -256,26 +298,24 @@ pageView model =
         taco =
             model.taco
 
-        showCachedData =
-            figureOutWhetherToShowCachedData taco.pageStatus
+        -- showCachedData =
+        --     figureOutWhetherToShowCachedData taco.pageStatus
     in
         case taco.currentPage of
             IssNowPage ->
-                case showCachedData of
-                    True ->
-                        IssNow.view model.maybeIssNowPageData
+                -- case showCachedData of
+                -- True ->
+                IssNow.view model.issNow
 
-                    False ->
-                        IssNow.view Nothing
-
+            -- False ->
+            --     IssNow.view Nothing
             PeopleInSpacePage ->
-                case showCachedData of
-                    True ->
-                        PeopleInSpace.view model.peopleInSpace
+                -- case showCachedData of
+                -- True ->
+                PeopleInSpace.view model.peopleInSpace
 
-                    False ->
-                        PeopleInSpace.view model.peopleInSpace
-
+            -- False ->
+            --     PeopleInSpace.view model.peopleInSpace
             -- False ->
             --     PeopleInSpace.view Nothing
             NotFound ->
@@ -286,32 +326,27 @@ pageView model =
 --------------------------------------------------------------------------------
 -- SPA Routing
 --------------------------------------------------------------------------------
-
-
-figureOutWhetherToShowCachedData : PageStatus -> Bool
-figureOutWhetherToShowCachedData pageStatus =
-    case pageStatus of
-        LoadingFirstPage ->
-            False
-
-        -- can we pass the view and the data, and choose whether to pass in the
-        -- data or just nothing?
-        LoadingNextPageData ->
-            False
-
-        Reloading ->
-            True
-
-        -- Transitioning ->
-        --     False
-        Loaded ->
-            True
-
-        DataFetchError error ->
-            True
-
-
-
+-- figureOutWhetherToShowCachedData : PageStatus -> Bool
+-- figureOutWhetherToShowCachedData pageStatus =
+--     case pageStatus of
+--         LoadingFirstPage ->
+--             False
+--
+--         -- can we pass the view and the data, and choose whether to pass in the
+--         -- data or just nothing?
+--         LoadingNextPageData ->
+--             False
+--
+--         Reloading ->
+--             True
+--
+--         -- Transitioning ->
+--         --     False
+--         Loaded ->
+--             True
+--
+--         DataFetchError error ->
+--             True
 --------------------------------------------------------------------------------
 -- Model Setter Boilerplate
 -- Hopefully one day there will be an Elm syntax for this :)
@@ -332,23 +367,20 @@ setLinkClicked b model =
     { model | linkClicked = b }
 
 
-setPageStatus : PageStatus -> Model -> Model
-setPageStatus pageStatus model =
-    let
-        taco =
-            model.taco
-    in
-        { model | taco = { taco | pageStatus = pageStatus } }
 
-
-setMaybeIssNowPageData : Maybe IssNow.Model -> Model -> Model
-setMaybeIssNowPageData v m =
-    { m | maybeIssNowPageData = v }
-
-
-setPeopleInSpacePeople : PeopleInSpace.People -> Model -> Model
-setPeopleInSpacePeople people model =
-    { model | peopleInSpace = PeopleInSpace.setPeople people model.peopleInSpace }
+-- setPageStatus : PageStatus -> Model -> Model
+-- setPageStatus pageStatus model =
+--     let
+--         taco =
+--             model.taco
+--     in
+--         { model | taco = { taco | pageStatus = pageStatus } }
+-- setMaybeIssNowPageData : Maybe IssNow.Model -> Model -> Model
+-- setMaybeIssNowPageData v m =
+--     { m | maybeIssNowPageData = v }
+-- setPeopleInSpacePeople : PeopleInSpace.People -> Model -> Model
+-- setPeopleInSpacePeople people model =
+--     { model | peopleInSpace = PeopleInSpace.setPeople people model.peopleInSpace }
 
 
 setPeopleInSpace : PeopleInSpace.Model -> Model -> Model

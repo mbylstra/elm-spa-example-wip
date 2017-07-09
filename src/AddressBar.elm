@@ -2,7 +2,7 @@ module AddressBar exposing (..)
 
 import Navigation exposing (newUrl)
 import UrlParser
-import Types exposing (Page(..), PageStatus(..))
+import Types exposing (Page(..))
 
 
 getUrl : Page -> String

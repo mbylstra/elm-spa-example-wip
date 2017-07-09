@@ -9,7 +9,6 @@ type alias Taco =
     { currentPage : Page
     , previousPage : Maybe Page
     , nextPage : Maybe Page
-    , pageStatus : PageStatus
     }
 
 
@@ -18,7 +17,6 @@ init location =
     { currentPage = parseLocation location
     , previousPage = Nothing
     , nextPage = Nothing
-    , pageStatus = LoadingFirstPage
     }
 
 
@@ -28,9 +26,10 @@ updatePage page taco =
         | currentPage = page
         , previousPage = Just taco.currentPage
         , nextPage = Nothing
-        , pageStatus =
-            if page == taco.currentPage then
-                Reloading
-            else
-                LoadingNextPageData
+
+        -- , pageStatus =
+        --     if page == taco.currentPage then
+        --         Reloading
+        --     else
+        --         LoadingNextPageData
     }

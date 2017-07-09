@@ -1,9 +1,10 @@
 module Pages.PeopleInSpace exposing (..)
 
 import Dict exposing (Dict)
-import Html exposing (Html, a, button, div, dt, p, text, dl, dt, dd, textarea)
+import Html exposing (Html, a, button, dd, div, dl, dt, p, text, textarea)
 import Http
 import Json.Decode as Json
+import Types exposing (PageLoadingStatus(..))
 
 
 --------------------------------------------------------------------------------
@@ -16,6 +17,7 @@ type alias Model =
 
     -- A list of Work In Progress messages to send to the maybePeople
     , messages : Dict PersonId Message
+    , loadingStatus : PageLoadingStatus
     }
 
 
@@ -44,11 +46,22 @@ type alias Person =
     }
 
 
-init : Model
-init =
+initModel : Model
+initModel =
     { maybePeople = Nothing
     , messages = Dict.empty
+    , loadingStatus = Loading
     }
+
+
+initCmd : Cmd Msg
+initCmd =
+    sendRequest
+
+
+getLoadingStatus : Model -> PageLoadingStatus
+getLoadingStatus model =
+    model.loadingStatus
 
 
 
@@ -57,9 +70,36 @@ init =
 --------------------------------------------------------------------------------
 
 
-setPeople : People -> Model -> Model
-setPeople people model =
-    { model | maybePeople = Just people }
+type Msg
+    = DataFetched (Result Http.Error People)
+
+
+update : Msg -> Model -> Model
+update msg model =
+    case msg of
+        DataFetched result ->
+            case result of
+                Ok people ->
+                    { model | maybePeople = Just people, loadingStatus = Loaded }
+
+                Err err ->
+                    { model | loadingStatus = DataFetchError <| toString err }
+
+
+
+-- setPeople : People -> Model -> Model
+-- setPeople people model =
+--     { model | maybePeople = Just people }
+
+
+navigateTo : Model -> ( Model, Cmd Msg )
+navigateTo model =
+    { model | loadingStatus = Loading } ! [ sendRequest ]
+
+
+reload : Model -> ( Model, Cmd Msg )
+reload model =
+    { model | loadingStatus = Reloading } ! [ sendRequest ]
 
 
 
@@ -70,20 +110,41 @@ setPeople people model =
 
 view : Model -> Html msg
 view model =
+    case model.loadingStatus of
+        Loading ->
+            div [] []
+
+        Reloading ->
+            viewWithVisibleData model
+
+        DataFetchError _ ->
+            viewWithVisibleData model
+
+        Loaded ->
+            viewWithVisibleData model
+
+
+viewWithVisibleData : Model -> Html msg
+viewWithVisibleData model =
     case model.maybePeople of
         Just people ->
-            div []
-                (people
-                    |> Dict.toList
-                    |> List.map
-                        (\( personId, person ) ->
-                            personView person (Dict.get personId model.messages)
-                        )
-                )
+            loadedDataView people model
 
         Nothing ->
             div []
                 [ text "loading the people in space data" ]
+
+
+loadedDataView : People -> Model -> Html msg
+loadedDataView people model =
+    div []
+        (people
+            |> Dict.toList
+            |> List.map
+                (\( personId, person ) ->
+                    personView person (Dict.get personId model.messages)
+                )
+        )
 
 
 dlItem : String -> Html msg -> Html msg
@@ -138,9 +199,9 @@ request =
     Http.get maybePeopleInSpaceUrl maybePeopleDecoder
 
 
-sendRequest : (Result Http.Error People -> msg) -> Cmd msg
-sendRequest tagger =
-    Http.send tagger request
+sendRequest : Cmd Msg
+sendRequest =
+    Http.send DataFetched request
 
 
 maybePeopleDecoder : Json.Decoder People
