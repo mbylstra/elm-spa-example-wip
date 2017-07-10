@@ -224,7 +224,7 @@ pageView model =
                 IssNow.view model.issNow
 
             PeopleInSpacePage ->
-                PeopleInSpace.view model.peopleInSpace
+                Html.map PeopleInSpaceMsg <| PeopleInSpace.view model.peopleInSpace
 
             NotFound ->
                 div [] [ text "Not Found" ]

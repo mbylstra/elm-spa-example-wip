@@ -2,6 +2,7 @@ module Pages.PeopleInSpace exposing (..)
 
 import Dict exposing (Dict)
 import Html exposing (Html, a, button, dd, div, dl, dt, p, text, textarea)
+import Html.Events exposing (onClick, onInput)
 import Http
 import Json.Decode as Json
 import Types exposing (PageLoadingStatus(..))
@@ -72,6 +73,9 @@ getLoadingStatus model =
 
 type Msg
     = DataFetched (Result Http.Error People)
+    | StartWritingMessage PersonId
+    | UpdateMessage PersonId String
+    | SendMessage PersonId
 
 
 update : Msg -> Model -> Model
@@ -84,6 +88,27 @@ update msg model =
 
                 Err err ->
                     { model | loadingStatus = DataFetchError <| toString err }
+
+        StartWritingMessage personId ->
+            { model
+                | messages =
+                    Dict.insert personId { content = "", status = WIP } model.messages
+            }
+
+        UpdateMessage personId content ->
+            { model
+                | messages =
+                    Dict.insert personId { content = content, status = WIP } model.messages
+            }
+
+        SendMessage personId ->
+            { model
+                | messages =
+                    Dict.update
+                        personId
+                        (Maybe.map (\message -> { message | status = Sent }))
+                        model.messages
+            }
 
 
 
@@ -108,7 +133,7 @@ reload model =
 --------------------------------------------------------------------------------
 
 
-view : Model -> Html msg
+view : Model -> Html Msg
 view model =
     case ( model.loadingStatus, model.maybePeople ) of
         ( Loaded, Just people ) ->
@@ -139,7 +164,7 @@ view model =
             div [] []
 
 
-loadedDataView : People -> Model -> Html msg
+loadedDataView : People -> Model -> Html Msg
 loadedDataView people model =
     div []
         (people
@@ -159,24 +184,27 @@ dlItem term ddContent =
         ]
 
 
-personView : Person -> Maybe Message -> Html msg
+personView : Person -> Maybe Message -> Html Msg
 personView person maybeMessage =
     div []
         [ dl []
             [ dlItem "name" (text person.name)
             , dlItem "craft" (text person.craft)
-            , dlItem "your message" (messageView maybeMessage)
+            , dlItem "your message" (messageView person.name maybeMessage)
             ]
         ]
 
 
-messageView : Maybe Message -> Html msg
-messageView maybeMessage =
+messageView : PersonId -> Maybe Message -> Html Msg
+messageView personId maybeMessage =
     case maybeMessage of
         Just message ->
             case message.status of
                 WIP ->
-                    textarea [] [ text message.content ]
+                    div []
+                        [ textarea [ onInput <| UpdateMessage personId ] [ text message.content ]
+                        , button [ onClick <| SendMessage personId ] [ text "send" ]
+                        ]
 
                 Sent ->
                     p
@@ -184,7 +212,7 @@ messageView maybeMessage =
                         [ text message.content ]
 
         Nothing ->
-            button [] [ text "write a message" ]
+            button [ onClick <| StartWritingMessage personId ] [ text "write a message" ]
 
 
 
