@@ -110,29 +110,33 @@ reload model =
 
 view : Model -> Html msg
 view model =
-    case model.loadingStatus of
-        Loading ->
-            div [] []
-
-        Reloading ->
-            viewWithVisibleData model
-
-        DataFetchError _ ->
-            viewWithVisibleData model
-
-        Loaded ->
-            viewWithVisibleData model
-
-
-viewWithVisibleData : Model -> Html msg
-viewWithVisibleData model =
-    case model.maybePeople of
-        Just people ->
+    case ( model.loadingStatus, model.maybePeople ) of
+        ( Loaded, Just people ) ->
             loadedDataView people model
 
-        Nothing ->
+        ( Loaded, Nothing ) ->
+            Debug.crash "This is an impossible state. There must be a bug!"
+
+        ( Loading, Just _ ) ->
+            div [] []
+
+        ( Loading, Nothing ) ->
+            div [] [ text "loading people.." ]
+
+        ( Reloading, Just people ) ->
+            loadedDataView people model
+
+        ( Reloading, Nothing ) ->
+            Debug.crash "This is an impossible state. There must be a bug!"
+
+        ( DataFetchError message, Just people ) ->
             div []
-                [ text "loading the people in space data" ]
+                [ text "THere was an error getting the most recent version. Showing an older version of the data"
+                , loadedDataView people model
+                ]
+
+        ( DataFetchError message, Nothing ) ->
+            div [] []
 
 
 loadedDataView : People -> Model -> Html msg
