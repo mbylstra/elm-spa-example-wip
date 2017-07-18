@@ -1,14 +1,15 @@
 module Main exposing (..)
 
 import AddressBar exposing (getUrl, parseLocation)
-import Html exposing (Html, a, button, div, p, text)
+import Html exposing (Html, a, button, div, p, span, text)
+import Html.Attributes exposing (class)
 import Html.Events exposing (onClick)
+import LoadingStatusBar
 import Navigation exposing (newUrl)
 import Pages.IssNow as IssNow
 import Pages.PeopleInSpace as PeopleInSpace
 import Taco exposing (Taco)
 import Types exposing (Page(..))
-import LoadingStatusBar
 
 
 --------------------------------------------------------------------------------
@@ -51,29 +52,32 @@ init location =
         taco =
             Taco.init location
 
+        ( issNow, issNowCmd ) =
+            IssNow.initModel
+
         model =
             { taco = taco
 
             -- page state
-            , issNow = IssNow.initModel
             , peopleInSpace = PeopleInSpace.initModel
+            , issNow = issNow
 
             -- top level "private" fields
             , linkClicked = False
             }
 
-        cmd =
+        currentPageCmd =
             case taco.currentPage of
                 PeopleInSpacePage ->
-                    Cmd.map PeopleInSpaceMsg PeopleInSpace.initCmd
+                    PeopleInSpace.initCmd |> Cmd.map PeopleInSpaceMsg
 
                 IssNowPage ->
-                    Cmd.map IssNowMsg IssNow.initCmd
+                    IssNow.initCmd |> Cmd.map IssNowMsg
 
                 NotFound ->
                     Cmd.none
     in
-        model ! [ cmd ]
+        model ! [ currentPageCmd, issNowCmd |> Cmd.map IssNowMsg ]
 
 
 
@@ -102,7 +106,11 @@ update msg model =
             { model | peopleInSpace = PeopleInSpace.update pisMsg model.peopleInSpace } ! []
 
         IssNowMsg issNowMsg ->
-            { model | issNow = IssNow.update issNowMsg model.issNow } ! []
+            let
+                ( issNow, issNowCmd ) =
+                    IssNow.update issNowMsg model.issNow
+            in
+                { model | issNow = issNow } ! [ issNowCmd |> Cmd.map IssNowMsg ]
 
 
 handleUrlChanged : Navigation.Location -> Model -> ( Model, Cmd Msg )
@@ -194,23 +202,25 @@ view model =
 
 topNav : Html Msg
 topNav =
-    div []
-        [ button [ onClick <| RouteChangeRequested IssNowPage ] [ text "Home Page" ]
-        , button [ onClick <| RouteChangeRequested PeopleInSpacePage ] [ text "People In Space Page" ]
+    div [ class "top-nav" ]
+        [ button [ onClick <| RouteChangeRequested IssNowPage ] [ text "ISS Current Location" ]
+        , button [ onClick <| RouteChangeRequested PeopleInSpacePage ] [ text "People In Space" ]
         ]
 
 
 loadingBar : Model -> Html Msg
 loadingBar model =
-    case model.taco.currentPage of
-        PeopleInSpacePage ->
-            LoadingStatusBar.view PeopleInSpace.getLoadingStatus model.peopleInSpace
+    div [ class "loading-bar" ]
+        [ case model.taco.currentPage of
+            PeopleInSpacePage ->
+                LoadingStatusBar.view PeopleInSpace.getLoadingStatus model.peopleInSpace
 
-        IssNowPage ->
-            LoadingStatusBar.view IssNow.getLoadingStatus model.issNow
+            IssNowPage ->
+                LoadingStatusBar.view IssNow.getLoadingStatus model.issNow
 
-        NotFound ->
-            text "Not Found"
+            NotFound ->
+                text "Not Found"
+        ]
 
 
 pageView : Model -> Html Msg
@@ -221,10 +231,10 @@ pageView model =
     in
         case taco.currentPage of
             IssNowPage ->
-                IssNow.view model.issNow
+                IssNow.view model.issNow |> Html.map IssNowMsg
 
             PeopleInSpacePage ->
-                Html.map PeopleInSpaceMsg <| PeopleInSpace.view model.peopleInSpace
+                PeopleInSpace.view model.peopleInSpace |> Html.map PeopleInSpaceMsg
 
             NotFound ->
                 div [] [ text "Not Found" ]

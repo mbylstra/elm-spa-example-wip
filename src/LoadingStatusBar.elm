@@ -4,7 +4,8 @@ module LoadingStatusBar exposing (..)
 -- So, it's a function that takes any state, and returns whether it is loading or not
 -- The child is responsible for keep the state of whether or not it is loading.
 
-import Html exposing (Html, text)
+import Html exposing (Html, span, text)
+import Html.Attributes exposing (style)
 import Types exposing (PageLoadingStatus(..))
 
 
@@ -12,13 +13,13 @@ view : (model -> PageLoadingStatus) -> model -> Html msg
 view isLoadingFunction model =
     case isLoadingFunction model of
         Loading ->
-            text "loading..."
+            span [] [ text "loading..." ]
 
         Reloading ->
-            text "reloading..."
+            span [] [ text "reloading..." ]
 
         Loaded ->
-            text "loaded"
+            span [ style [ ( "display", "none" ) ] ] []
 
         DataFetchError message ->
-            text message
+            span [] [ text message ]

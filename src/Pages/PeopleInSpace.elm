@@ -1,7 +1,9 @@
 module Pages.PeopleInSpace exposing (..)
 
 import Dict exposing (Dict)
+import Dom
 import Html exposing (Html, a, button, dd, div, dl, dt, p, text, textarea)
+import Html.Attributes exposing (class)
 import Html.Events exposing (onClick, onInput)
 import Http
 import Json.Decode as Json
@@ -178,7 +180,7 @@ loadedDataView people model =
 
 dlItem : String -> Html msg -> Html msg
 dlItem term ddContent =
-    div []
+    div [ class "dl-item" ]
         [ dt [] [ text term ]
         , dd [] [ ddContent ]
         ]
@@ -186,7 +188,7 @@ dlItem term ddContent =
 
 personView : Person -> Maybe Message -> Html Msg
 personView person maybeMessage =
-    div []
+    div [ class "person" ]
         [ dl []
             [ dlItem "name" (text person.name)
             , dlItem "craft" (text person.craft)
